@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebGL Echo</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background-color: #f0f0f000;
+    }
+
+    #canvas-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    
+    #myCanvas {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    #textInput {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 5px;
+      border: 1px solid #ccc;
+       z-index: 2;
+    }
+	
+    @font-face {
+        font-family: 'Comic Neue Bold';
+        src: url('https://iaminteractive.net/web-resources/font/ComicNeue-Bold.ttf') format('truetype');
+    }
+
+    #textCanvas {
+	    width: 100%;
+	    height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+        font-family: 'Comic Neue Bold', sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="canvas-container">
+    <canvas id="myCanvas"></canvas>
+    <canvas id="textCanvas" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <input type="text" id="textInput" placeholder="Type text & press ENTER">
+  </div>
+  
+  <script>
+    // --- WebGL and JavaScript Setup ---
+
+    // 1. Get Canvas and Context
+    const canvas = document.getElementById('myCanvas');
+    const gl = canvas.getContext('webgl');
+
+    if (!gl) {
+      alert('Unable to initialize WebGL. Your browser may not support it.');
+      throw new Error('WebGL not supported');
+    }
+
+    // 2. Text Input Handling
+    const textInput = document.getElementById('textInput');
+    let submittedText = '';
+
+    textInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        submittedText = textInput.value;
+        console.log('Text submitted:', submittedText);
+        textInput.value = '';
+        render(); // Call render after submission
+      }
+    });
+      
+    // 3.  Basic Shaders (Vertex and Fragment)
+    const vertexShaderSource = `
+        attribute vec4 a_position;
+        void main() {
+            gl_Position = a_position;
+        }
+    `;
+
+    const fragmentShaderSource = `
+        precision mediump float;
+        uniform vec4 u_color;
+
+        void main() {
+            gl_FragColor = u_color;
+        }
+    `;
+
+    // 4. Shader Helper Functions
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    function createProgram(gl, vertexShader, fragmentShader) {
+      const program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Unable to initialize the shader program: ' + gl.getProgramInfoLog(program));
+        return null;
+      }
+      return program;
+    }
+      
+
+    // 5. Create and Link Shaders
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const shaderProgram = createProgram(gl, vertexShader, fragmentShader);
+
+
+    // 6. Set up Buffers (Example: Simple Square)
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+    const positions = [
+      -0.5,  0.5,
+      -0.5, -0.5,
+       0.5,  0.5,
+       0.5, -0.5,
+    ];
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+
+    // 7.  Get Attribute and Uniform Locations
+    const positionAttributeLocation = gl.getAttribLocation(shaderProgram, 'a_position');
+    const colorUniformLocation = gl.getUniformLocation(shaderProgram, "u_color");
+
+	// Create a canvas for rendering output
+    const textCanvas = document.getElementById('textCanvas');
+    const ctx = textCanvas.getContext('2d');
+    textCanvas.width = canvas.width;
+    textCanvas.height = canvas.height;
+
+// Calculates the height of wrapped text WITHOUT drawing it (handles long words).
+function calculateWrappedTextHeight(context, text, maxWidth, lineHeight) {
+    let totalHeight = lineHeight;
+    let line = '';
+    let currentWord = '';
+
+    for (let n = 0; n < text.length; n++) {
+        const char = text[n];
+
+        if (char === ' ') {
+            // Handle spaces (word boundaries)
+            const testLine = line + currentWord + ' ';
+            const metrics = context.measureText(testLine);
+            if (metrics.width > maxWidth && line.length > 0) {
+                totalHeight += lineHeight;
+                line = currentWord + ' ';
+            } else {
+                line = testLine;
+            }
+            currentWord = '';
+        } else {
+            // Build up the current word, character by character
+            currentWord += char;
+            const testLine = line + currentWord;
+            const metrics = context.measureText(testLine);
+
+            if (metrics.width > maxWidth) {
+                // If adding the current word exceeds maxWidth...
+                if (line.length > 0) {
+                    // ...and we have a previous line, increment height
+                    totalHeight += lineHeight;
+                    line = ''; // Start a new line
+                }
+
+                // Handle long words (character-by-character wrap)
+                while (context.measureText(currentWord).width > maxWidth) {
+                    let fittingChars = 0;
+                    for (let i = 1; i <= currentWord.length; i++) {
+                        if (context.measureText(currentWord.substring(0, i)).width > maxWidth) {
+                            fittingChars = i - 1;
+                            break;
+                        }
+                    }
+                    if (fittingChars < 1) fittingChars = 1; // Prevent infinite loop
+                    totalHeight += lineHeight;
+                    currentWord = currentWord.substring(fittingChars);
+                }
+                line = currentWord; // Start next line with remainder
+                currentWord = "";
+            }
+        }
+    }
+    return totalHeight;
+}
+// Helper function to wrap and draw text (handles long words).
+function wrapText(context, text, x, y, maxWidth, lineHeight) {
+    let line = '';
+    let currentWord = '';
+
+    for (let n = 0; n < text.length; n++) {
+        const char = text[n];
+
+        if (char === ' ') {
+            // Handle spaces (word boundaries)
+            const testLine = line + currentWord + ' ';
+            const metrics = context.measureText(testLine);
+            if (metrics.width > maxWidth && line.length > 0) {
+                context.fillText(line, x, y);
+                line = currentWord + ' ';
+                y += lineHeight;
+            } else {
+                line = testLine;
+            }
+            currentWord = '';
+        } else {
+            // Build up the current word, character by character
+            currentWord += char;
+            const testLine = line + currentWord;
+            const metrics = context.measureText(testLine);
+
+            if (metrics.width > maxWidth) {
+                 // If adding the current word exceeds maxWidth...
+                if (line.length > 0) {
+                    // ...and we have a previous line, draw it
+                    context.fillText(line, x, y);
+                    y += lineHeight;
+                    line = ''; // Start a new line
+                }
+
+                // Handle long words (character-by-character wrap)
+                while (context.measureText(currentWord).width > maxWidth) {
+                    let fittingChars = 0;
+                    for (let i = 1; i <= currentWord.length; i++) {
+                        if (context.measureText(currentWord.substring(0, i)).width > maxWidth) {
+                            fittingChars = i - 1;
+                            break;
+                        }
+                    }
+                    if (fittingChars < 1) fittingChars = 1;  // Prevent infinite loop.
+                    context.fillText(currentWord.substring(0, fittingChars), x, y);
+                    y += lineHeight;
+                    currentWord = currentWord.substring(fittingChars);
+                }
+                line = currentWord;
+                currentWord = "";
+            }
+        }
+    }
+
+    // Render any remaining text (last line/word)
+    context.fillText(line + currentWord, x, y);
+}
+
+// Calculate the initial scroll offset (70% of lineHeight above the top)
+    const lineHeight = 35;
+    let scrollY = 0; // Start with the text partially off-screen
+    const scrollSpeed = 1; // Adjust for desired speed
+
+    let glitchIntensity = 5; // Control the strength of the glitch
+    let glitchOffset = 0; // Variable to control horizontal glitch offset
+
+    // I am about to go a little crazy.
+// --- Perlin Noise Implementation (Simple 2D) --- (Remains the same)
+function noise(x, y) {
+    //  (Implementation from previous response - included for completeness)
+    let p = new Uint8Array(512);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 0; i < 255; i++) {
+        let r = i + ~~(Math.random() * (256 - i));
+        [p[i], p[r]] = [p[r], p[i]];
+    }
+    for (let i = 0; i < 256; i++) p[i + 256] = p[i];
+
+     function fade(t) {
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    function lerp(t, a, b) {
+        return a + t * (b - a);
+    }
+    function grad(hash, x, y) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+
+    x = (x%255 + 255) %255;
+    y = (y%255 + 255) %255;
+    const xi = Math.floor(x) & 255;
+    const yi = Math.floor(y) & 255;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = fade(xf);
+    const v = fade(yf);
+
+    const aa = p[p[xi] + yi];
+    const ab = p[p[xi] + yi + 1];
+    const ba = p[p[xi + 1] + yi];
+    const bb = p[p[xi + 1] + yi + 1];
+
+    const g1 = grad(aa, xf, yf);
+    const g2 = grad(ba, xf - 1, yf);
+    const g3 = grad(ab, xf, yf - 1);
+    const g4 = grad(bb, xf - 1, yf - 1);
+    const i1 = lerp(u, g1, g2);
+    const i2 = lerp(u, g3, g4);
+    return (lerp(v, i1, i2) + 1) * 0.5;
+}
+
+// --- LightLeak Class (with color animation) ---
+class LightLeak {
+    constructor(x, y, color, size, opacity) {
+        this.x = x;
+        this.y = y;
+        this.color = color; // Initial color (e.g., 'rgba(255, 100, 0, 0.3)')
+        this.size = size;
+        this.opacity = opacity;
+        this.timeOffsetX = Math.random() * 1000;
+        this.timeOffsetY = Math.random() * 1000;
+        this.timeOffsetSize = Math.random() * 1000;
+        this.timeOffsetOpacity = Math.random() * 1000;
+        this.timeOffsetColorR = Math.random() * 1000; // For red channel
+        this.timeOffsetColorG = Math.random() * 1000; // For green channel
+        this.timeOffsetColorB = Math.random() * 1000; // For blue channel
+        this.initialColor = this.parseColor(color); // Store initial color components
+
+    }
+    // Helper function to parse 'rgba(r, g, b, a)' string
+    parseColor(colorString) {
+        const match = colorString.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+        if (match) {
+            return {
+                r: parseInt(match[1]),
+                g: parseInt(match[2]),
+                b: parseInt(match[3]),
+                a: parseFloat(match[4]),
+            };
+        }
+        return { r: 255, g: 0, b: 0, a: 1 }; // Default to red
+    }
+
+
+    update(time) {
+        this.x = this.x + (noise(time * 0.00000001 + this.timeOffsetX, this.timeOffsetY) - 0.5) * 5;
+        this.y = this.y + (noise(time * 0.00000001 + this.timeOffsetY, this.timeOffsetX) - 0.5) * 5;
+        this.size = this.size + (noise(time * 0.0003 + this.timeOffsetSize, this.timeOffsetSize) - 0.5) * 1;
+        this.opacity = Math.max(0, Math.min(1, this.opacity + (noise(time * 0.0002 + this.timeOffsetOpacity, this.timeOffsetOpacity) - 0.5) * 0.1));
+
+        // Animate color components
+        const r = Math.max(0, Math.min(255, this.initialColor.r + (noise(time * 0.0002 + this.timeOffsetColorR, 0) - 0.5) * 100)); // Vary by +/- 50
+        const g = Math.max(0, Math.min(255, this.initialColor.g + (noise(time * 0.0002 + this.timeOffsetColorG, 0) - 0.5) * 100));
+        const b = Math.max(0, Math.min(255, this.initialColor.b + (noise(time * 0.0002 + this.timeOffsetColorB, 0) - 0.5) * 100));
+        this.color = `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${this.opacity})`; // Update color string
+    }
+
+    draw(context) {
+        context.save();
+        context.globalAlpha = this.opacity;
+
+        const gradient = context.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size);
+        gradient.addColorStop(0, this.color); // Use the animated color
+        gradient.addColorStop(1, 'transparent');
+
+        context.fillStyle = gradient;
+
+        context.beginPath();
+        context.arc(this.x, this.y, this.size, 0, 2 * Math.PI);
+        context.fill();
+
+        context.restore();
+    }
+}
+
+// --- Create LightLeak instances ---
+const lightLeaks = [
+    new LightLeak(100, 150, 'rgba(255, 100, 0, 0.3)', 150, 0.6),
+    new LightLeak(textCanvas.width - 150, 50, 'rgba(0, 150, 255, 0.2)', 200, 0.5),
+    new LightLeak(300, textCanvas.height - 80, 'rgba(255, 200, 50, 0.4)', 120, 0.7),
+    new LightLeak(textCanvas.width / 2, textCanvas.height / 2, 'rgba(150, 0, 255, 0.1)', 300, 0.4),
+    new LightLeak(50, 50, 'rgba(255, 0, 100, 0.2)', 180, 0.5), // Fifth light leak
+];
+
+// --- Function to update light leaks --- (Remains the same)
+function updateLightLeaks(time) {
+    for (const lightLeak of lightLeaks) {
+        lightLeak.update(time);
+    }
+}
+// .
+function render() {
+    gl.clearColor(0.0, 0.0, 0.0, 0.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    // --- Light Leak Effects (BEFORE text) ---
+    ctx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+    for (const lightLeak of lightLeaks) {
+        lightLeak.draw(ctx);
+    }
+
+    if (submittedText) {
+        ctx.save();
+
+        // Transformations FIRST
+        ctx.translate(textCanvas.width / 2, textCanvas.height / 2);
+        ctx.scale(-1, -1);
+
+        ctx.font = '30px Comic Neue Bold';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const maxWidth = textCanvas.width - 60;
+        const startX = 0;
+
+        // Calculate totalTextHeight *AFTER* transformations
+        const totalTextHeight = calculateWrappedTextHeight(ctx, submittedText, maxWidth, lineHeight);
+
+        // startY Calculation (Simplified - starts at top)
+        const startY = scrollY; // Start at top.
+
+        // --- Glitch Effect ---
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 3; i++) {
+            const offsetX = (Math.random() - 0.5) * glitchIntensity + glitchOffset;
+            const offsetY = (Math.random() - 0.5) * glitchIntensity;
+            if (i === 0) ctx.fillStyle = 'red';
+            if (i === 1) ctx.fillStyle = 'lime';
+            if (i === 2) ctx.fillStyle = 'blue';
+            wrapText(ctx, submittedText, startX + offsetX, startY + offsetY, maxWidth, lineHeight);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = 'black';
+        wrapText(ctx, submittedText, startX, startY, maxWidth, lineHeight); // Normal text
+
+        ctx.restore();
+    }
+}
+function update() {
+    scrollY -= scrollSpeed; // Move text downwards.
+
+    // Glitch offset changes (Keep this part, it is good)
+    glitchOffset = Math.sin(Date.now() * 0.002) * glitchIntensity * 0.5;
+
+    const totalTextHeight = submittedText
+        ? calculateWrappedTextHeight(ctx, submittedText, textCanvas.width - 60, lineHeight)
+        : 0;
+
+    // --- KEY CHANGE:  Check position of the *last* line ---
+    const lastLineY = scrollY + totalTextHeight; //  Position of the *bottom* of the last line.
+    const canvasBottom = textCanvas.height / 2;  // Because of the transformations, the bottom is at height/2
+    const resetThreshold = canvasBottom + (lineHeight * 0.7); // 70% of lineHeight *below* the bottom
+
+    if (lastLineY < -resetThreshold) {
+        scrollY = 100; // Reset to top
+    }
+
+
+    const now = Date.now();
+    updateLightLeaks(now); // Update light leaks
+    render();
+    requestAnimationFrame(update);
+}
+
+    document.fonts.load('1em Comic Neue Bold').then(() => {
+      // Start the animation loop *after* the font is loaded.
+      update();
+    });
+
+  </script>
+</body>
+</html>

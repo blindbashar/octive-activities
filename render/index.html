@@ -1,0 +1,22 @@
+<!--
+Create a basic HTML file (e.g., index.html).
+Include a <canvas> element. This is where your WebGL rendering will happen. Give it an ID (e.g., webgl-canvas).
+Include a <script> tag to hold your JavaScript code (either directly in the HTML or in a separate .js file).
+-->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebGL 3D Rendering Boilerplate</title>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <canvas id="webgl-canvas" style="width:100%;height:100%;"></canvas>
+
+	<!-- Add a <script> tag to your HTML to include the gl-matrix library.  We'll use a CDN (Content Delivery Network) for simplicity -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/3.4.2/gl-matrix-min.js"></script>
+
+    <script src="script.js"></script> 
+</body>
+</html>
