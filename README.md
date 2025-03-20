@@ -4,6 +4,6 @@ The intent behind their design is to provide small, interactive experiences that
 
 These are not "games," because they have no score and no win or lose condition. The only goal is entertainment and relaxation.
 
-Feel free to use this code for any purpose (CC0.)
+Feel free to use this code for any purpose.
 
 Cheers. - Theo
