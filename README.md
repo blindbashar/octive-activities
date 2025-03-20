@@ -1,4 +1,4 @@
-# Live at https://blindbashar.github.io/octive-activies
+# Live at https://blindbashar.github.io/octive-activities
 
 This repository holds a collection of stand-alone WebGL widgets, generally consisting of one pair of HTML and JS files each.
 
