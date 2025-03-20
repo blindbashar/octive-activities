@@ -1,3 +1,5 @@
+/* © 2025 Octive LLC */
+
 // Get WebGL context from canvas
 const canvas = document.getElementById('gameCanvas');
 const gl = canvas.getContext('webgl');
