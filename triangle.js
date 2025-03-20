@@ -1,4 +1,4 @@
-/* © 2025 Octive LLC */
+/* © 2025 Octive Interactive LLC */
 
 // Get WebGL context from canvas
 const canvas = document.getElementById('gameCanvas');

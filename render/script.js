@@ -1,4 +1,4 @@
-/* © 2025 Octive LLC */
+/* © 2025 Octive Interactive LLC */
 
 const canvas = document.getElementById('webgl-canvas');
 const gl = canvas.getContext('webgl');
